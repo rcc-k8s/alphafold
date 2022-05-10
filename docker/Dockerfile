@@ -36,7 +36,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
 RUN git clone --branch v3.3.0 https://github.com/soedinglab/hh-suite.git /tmp/hh-suite \
     && mkdir /tmp/hh-suite/build \
     && pushd /tmp/hh-suite/build \
-    && cmake -DCMAKE_INSTALL_PREFIX=/opt/hhsuite .. \
+    && cmake -DCMAKE_INSTALL_PREFIX=/opt/hhsuite -DHAVE_AVX2=1 .. \
     && make -j 4 && make install \
     && ln -s /opt/hhsuite/bin/* /usr/bin \
     && popd \
@@ -58,15 +58,17 @@ RUN conda update -qy conda \
       pip \
       python=3.7
 
-COPY . /app/alphafold
-RUN wget -q -P /app/alphafold/alphafold/common/ \
-  https://git.scicore.unibas.ch/schwede/openstructure/-/raw/7102c63615b64735c4941278d92b554ec94415f8/modules/mol/alg/src/stereo_chemical_props.txt
+COPY ./requirements.txt /app/alphafold/requirements.txt
 
 # Install pip packages.
 RUN pip3 install --upgrade pip \
     && pip3 install -r /app/alphafold/requirements.txt \
     && pip3 install --upgrade jax==0.2.14 jaxlib==0.1.69+cuda${CUDA/./} -f \
       https://storage.googleapis.com/jax-releases/jax_releases.html
+
+COPY . /app/alphafold
+RUN wget -q -P /app/alphafold/alphafold/common/ \
+  https://git.scicore.unibas.ch/schwede/openstructure/-/raw/7102c63615b64735c4941278d92b554ec94415f8/modules/mol/alg/src/stereo_chemical_props.txt
 
 # Apply OpenMM patch.
 WORKDIR /opt/conda/lib/python3.7/site-packages
@@ -80,9 +82,12 @@ RUN chmod u+s /sbin/ldconfig.real
 # details.
 # ENTRYPOINT does not support easily running multiple commands, so instead we
 # write a shell script to wrap them up.
+
 WORKDIR /app/alphafold
+RUN chmod +x /app/alphafold/run_alphafold.sh
 RUN echo $'#!/bin/bash\n\
 ldconfig\n\
-python /app/alphafold/run_alphafold.py "$@"' > /app/run_alphafold.sh \
+mkdir $OUTPUT_PATH -p\n\
+/app/alphafold/run_alphafold.sh -f $FASTA_PATH -o $OUTPUT_PATH -t 2020-05-14 -d /home/af2dbs' > /app/run_alphafold.sh \
   && chmod +x /app/run_alphafold.sh
 ENTRYPOINT ["/app/run_alphafold.sh"]
